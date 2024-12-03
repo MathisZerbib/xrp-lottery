@@ -3,15 +3,16 @@ import { Client, Wallet } from 'xrpl';
 import { AccountInfoRequest } from 'xrpl/dist/npm/models/methods';
 import { generateMnemonic as bip39GenerateMnemonic } from 'bip39';
 
-const getClientUrl = (network: string) => {
-    if (network === 'mainnet') {
+const NETWORK = process.env.NETWORK || 'testnet'; // Default to testnet
+
+const getClientUrl = () => {
+    if (NETWORK === 'mainnet') {
         return 'wss://s1.ripple.com';
     }
     return 'wss://s.altnet.rippletest.net:51233';
 };
 
-const createClient = (network: string) => new Client(getClientUrl(network));
-
+const client = new Client(getClientUrl());
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000;
 
@@ -21,7 +22,7 @@ export const generateMnemonic = (): string => {
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const checkAddressBalance = async (client: Client, address: string): Promise<number> => {
+const checkAddressBalance = async (address: string): Promise<number> => {
     try {
         if (!client.isConnected()) {
             await client.connect();
@@ -54,8 +55,7 @@ export interface RecoveredWallet {
     balance: number;
 }
 
-export const recoverWalletFromMnemonic = async (network: string, mnemonic: string): Promise<RecoveredWallet> => {
-    const client = createClient(network);
+export const recoverWalletFromMnemonic = async (mnemonic: string): Promise<RecoveredWallet> => {
     let retries = 0;
 
     while (retries < MAX_RETRIES) {
@@ -64,7 +64,7 @@ export const recoverWalletFromMnemonic = async (network: string, mnemonic: strin
             const wallet = Wallet.fromMnemonic(mnemonic);
 
             // Check if address has funds before proceeding
-            const balance = await checkAddressBalance(client, wallet.address);
+            const balance = await checkAddressBalance(wallet.address);
 
             if (balance > 0) {
                 // Only if we found funds, try to verify the seed works

@@ -1,4 +1,4 @@
-// pages/index.tsx
+// src/app/page.tsx
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
@@ -8,7 +8,10 @@ import {
 } from "../utils/walletUtils";
 import WalletDisplay from "../components/WalletDisplay";
 import { Button } from "@/components/ui/button";
-import { Wallet } from "../types";
+import { Wallet } from "@/types";
+import Statistics from "../components/Statistics";
+import Probabilities from "../components/Probabilities";
+import NavBar from "../components/NavBar";
 
 export default function Home() {
   const [wallets, setWallets] = useState<Wallet[]>([]);
@@ -25,6 +28,14 @@ export default function Home() {
   const processedAddresses = useRef<Set<string>>(new Set());
   const isGenerating = useRef(false);
   const timerRef = useRef<NodeJS.Timeout>();
+  const [network, setNetwork] = useState("testnet");
+
+  useEffect(() => {
+    const storedNetwork = localStorage.getItem("network");
+    if (storedNetwork) {
+      setNetwork(storedNetwork);
+    }
+  }, []);
 
   useEffect(() => {
     if (isLoading) {
@@ -79,7 +90,7 @@ export default function Home() {
     while (isGenerating.current) {
       try {
         const mnemonic = generateMnemonic();
-        const wallet = await recoverWalletFromMnemonic(mnemonic);
+        const wallet = await recoverWalletFromMnemonic(network, mnemonic);
 
         if (processedAddresses.current.has(wallet.address)) {
           continue;
@@ -119,55 +130,6 @@ export default function Home() {
     setIsLoading(false);
   };
 
-  //   const generateWallets = async () => {
-  //     setIsLoading(true);
-  //     setError(null);
-  //     isGenerating.current = true;
-
-  //     while (isGenerating.current) {
-  //       try {
-  //         const mnemonic = generateMnemonic();
-  //         const wallet = await recoverWalletFromMnemonic(mnemonic);
-
-  //         if (processedAddresses.current.has(wallet.address)) {
-  //           console.log(
-  //             `⚠️ Address ${wallet.address} already processed. Skipping.`
-  //           );
-  //           continue;
-  //         }
-
-  //         processedAddresses.current.add(wallet.address);
-  //         setStats((prev) => ({
-  //           ...prev,
-  //           processedCount: prev.processedCount + 1,
-  //           totalAttempts: prev.totalAttempts + 1,
-  //           successfulAttempts:
-  //             wallet.balance > 0
-  //               ? prev.successfulAttempts + 1
-  //               : prev.successfulAttempts,
-  //         }));
-
-  //         console.log(`
-  // 🔑 Mnemonic: ${mnemonic}
-  // 📍 Address: ${wallet.address}
-  // 💰 Balance: ${wallet.balance} XRP`);
-
-  //         if (wallet.balance > 0) {
-  //           setWallets((prev) => [...prev, wallet]);
-  //           await registerWallet(wallet);
-  //           console.log("🎉 Wallet with balance found!");
-  //           break;
-  //         }
-  //       } catch (err) {
-  //         setError("Failed to generate wallet. Please try again.");
-  //         console.error("❌ Error:", err);
-  //         break;
-  //       }
-  //     }
-
-  //     setIsLoading(false);
-  //   };
-
   const stopGenerating = () => {
     isGenerating.current = false;
     setIsLoading(false);
@@ -184,11 +146,23 @@ export default function Home() {
     ? (stats.processedCount / stats.elapsedTime).toFixed(2)
     : "0";
 
+  const toggleNetwork = () => {
+    const newNetwork = network === "testnet" ? "mainnet" : "testnet";
+    setNetwork(newNetwork);
+    localStorage.setItem("network", newNetwork);
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="container max-w-4xl p-8">
+    <div>
+      <NavBar network={network} toggleNetwork={toggleNetwork} />
+      {network === "testnet" && (
+        <div className="w-full bg-yellow-200 text-yellow-800 text-center p-2">
+          Warning: You are currently using the Testnet. All funds are for
+          testing purposes only.
+        </div>
+      )}
+      <div className="container max-w-4xl p-8 flex flex-col space-y-8 mx-auto">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-4">Wallet Generator</h1>
           <div className="flex justify-center space-x-4">
             <Button onClick={generateWallets} disabled={isLoading}>
               {isLoading ? "Generating..." : "Generate Wallet"}
@@ -200,37 +174,12 @@ export default function Home() {
         </div>
 
         <div className="grid grid-cols-2 gap-6">
-          <div className="p-6 rounded-lg bg-white shadow-sm">
-            <h2 className="font-bold mb-4">Statistics</h2>
-            <p>⏱️ Elapsed Time: {formatTime(stats.elapsedTime)}</p>
-            <p>🔄 Processed Addresses: {stats.processedCount}</p>
-            <p>⚡ Rate: {walletRate} wallets/sec</p>
-            <p>💰 Found with Funds: {stats.foundWithFunds}</p>
-          </div>
-
-          <div className="p-6 rounded-lg bg-white shadow-sm">
-            <h2 className="font-bold mb-4">Probabilities</h2>
-            <p title="Chance of finding a wallet with funds">
-              🎯 Success rate:{" "}
-              {formatProbability(stats.foundWithFunds, stats.processedCount)}
-            </p>
-            {/* <p title="Historical probability based on blockchain data">
-              📊 Expected Rate: ~0.0001%
-            </p> */}
-            <p title="Attempts needed (statistical average)">
-              🎲 Required Attempts:{" "}
-              {Math.floor(1 / (stats.foundWithFunds / stats.processedCount)) ||
-                "∞"}
-            </p>
-            {/* <p title="Estimated time to find wallet with current rate">
-              ⏳ Est. Time to Find:{" "}
-              {stats.foundWithFunds
-                ? formatTime(
-                    Math.floor(stats.elapsedTime / stats.foundWithFunds)
-                  )
-                : "∞"}
-            </p> */}
-          </div>
+          <Statistics
+            stats={stats}
+            walletRate={walletRate}
+            formatTime={formatTime}
+          />
+          <Probabilities stats={stats} formatProbability={formatProbability} />
         </div>
 
         {error && <p className="text-red-500 mt-4 text-center">{error}</p>}
