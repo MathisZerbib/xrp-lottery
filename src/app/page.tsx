@@ -161,7 +161,16 @@ export default function Home() {
           testing purposes only.
         </div>
       )}
-      <div className="container max-w-4xl p-8 flex flex-col space-y-8 mx-auto">
+      <div className="grid grid-cols-2 gap-6 mb-8 p-8">
+        <Statistics
+          stats={stats}
+          walletRate={walletRate}
+          formatTime={formatTime}
+        />
+        <Probabilities stats={stats} formatProbability={formatProbability} />
+      </div>
+
+      <div className="container max-w-4xl flex flex-col space-y-8 mx-auto mb-8">
         <div className="text-center mb-8">
           <div className="flex justify-center space-x-4">
             <Button onClick={generateWallets} disabled={isLoading}>
@@ -171,15 +180,6 @@ export default function Home() {
               Stop
             </Button>
           </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-6">
-          <Statistics
-            stats={stats}
-            walletRate={walletRate}
-            formatTime={formatTime}
-          />
-          <Probabilities stats={stats} formatProbability={formatProbability} />
         </div>
 
         {error && <p className="text-red-500 mt-4 text-center">{error}</p>}
